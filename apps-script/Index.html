@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:#F4F6FB; font-family:Archivo,system-ui,sans-serif; color:#131A2B; }
+  input, button { font-family:Archivo,system-ui,sans-serif; }
+  input:focus { outline:none; border-color:#0B3C8C; box-shadow:0 0 0 3px rgba(11,60,140,.14); }
+  .app { max-width:520px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+  header { background:#0B3C8C; color:#fff; padding:calc(env(safe-area-inset-top) + 18px) 20px 16px; }
+  .topo { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .titulo { font:800 21px/1.1 Archivo; letter-spacing:-.3px; }
+  .sub { font:500 12.5px/1.4 Archivo; color:rgba(255,255,255,.62); margin-top:3px; }
+  .contador { font:600 30px/1 'IBM Plex Mono',monospace; color:#FFD21E; text-align:right; }
+  .contador span { display:block; font:500 10px/1.4 Archivo; letter-spacing:.6px; text-transform:uppercase; color:rgba(255,255,255,.5); }
+  .status { display:flex; align-items:center; gap:7px; margin-top:14px; padding:7px 11px; background:rgba(255,255,255,.09); border-radius:9px; font:500 11.5px/1.3 Archivo; color:rgba(255,255,255,.85); }
+  .dot { width:7px; height:7px; border-radius:9px; background:#FFD21E; flex:none; }
+  .abas { display:flex; gap:6px; margin-top:14px; padding:4px; background:rgba(0,0,0,.22); border-radius:12px; }
+  .abas button { flex:1; height:40px; border:none; border-radius:9px; background:transparent; color:rgba(255,255,255,.65); font:700 14px Archivo; }
+  .abas button.on { background:#F4F6FB; color:#0B3C8C; }
+  main { flex:1; padding:20px 20px 0; display:flex; flex-direction:column; gap:18px; }
+  label { font:600 11px/1 Archivo; letter-spacing:.7px; text-transform:uppercase; color:#6B7488; }
+  .campo { display:flex; flex-direction:column; gap:8px; }
+  .campo input { width:100%; height:56px; padding:0 16px; border:1.5px solid #CFD8E8; border-radius:13px; background:#fff; font-size:19px; font-weight:500; color:#131A2B; }
+  .campo input.mono { font-family:'IBM Plex Mono',monospace; }
+  .sugestoes { display:flex; gap:7px; flex-wrap:wrap; }
+  .sugestoes button { min-height:36px; padding:0 12px; border-radius:10px; border:1px dashed #BCC6DA; background:transparent; color:#4A5468; font:500 13.5px Archivo; }
+  footer { position:sticky; bottom:0; padding:10px 20px calc(env(safe-area-inset-bottom) + 20px); background:linear-gradient(to top,#F4F6FB 70%,rgba(244,246,251,0)); display:flex; flex-direction:column; gap:8px; }
+  .salvar { height:60px; border:none; border-radius:15px; background:#0B3C8C; color:#fff; font:700 18px Archivo; }
+  .salvar:active { background:#082C68; }
+  .toast { padding:9px 13px; border-radius:10px; background:#0B3C8C; color:#fff; font:600 13px Archivo; }
+  .toast.erro { background:#B3261E; }
+  .busca { width:100%; height:48px; padding:0 15px; border:1.5px solid #CFD8E8; border-radius:12px; background:#fff; font-size:15.5px; font-weight:500; }
+  .linha-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .rotulo { font:600 11px/1 Archivo; letter-spacing:.8px; text-transform:uppercase; color:#7C859A; }
+  .sinc { height:32px; padding:0 12px; border:1px solid #CFD8E8; border-radius:9px; background:#fff; color:#4A5468; font:600 12.5px Archivo; }
+  .destino { display:flex; align-items:center; gap:9px; padding:10px 12px; border:1px solid #CFD8E8; border-radius:12px; background:#fff; }
+  .gs { width:26px; height:26px; flex:none; border-radius:8px; background:#2FA36B; color:#fff; font:700 12px Archivo; display:flex; align-items:center; justify-content:center; }
+  .destino b { display:block; font:600 12.5px/1.3 Archivo; }
+  .destino small { display:block; font:500 11px/1.4 Archivo; color:#7C859A; }
+  .lista { display:flex; flex-direction:column; gap:8px; padding-bottom:30px; }
+  .item { display:flex; align-items:center; gap:11px; padding:13px; background:#fff; border:1px solid #DCE3EF; border-radius:14px; }
+  .ini { width:38px; height:38px; flex:none; border-radius:12px; background:#E4EAF7; color:#0B3C8C; font:700 14px Archivo; display:flex; align-items:center; justify-content:center; }
+  .item .nome { font:600 15.5px/1.25 Archivo; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .meta { font:500 12.5px/1.4 Archivo; color:#7C859A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .dir { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex:none; }
+  .item .tel { font:600 12px 'IBM Plex Mono',monospace; color:#7C859A; }
+  .item .est { display:flex; align-items:center; gap:5px; font:600 10px/1 Archivo; letter-spacing:.5px; text-transform:uppercase; color:#939CB0; }
+  .vazio { padding:30px 16px; text-align:center; border:1.5px dashed #C6D0E2; border-radius:14px; font:500 13.5px/1.6 Archivo; color:#8892A6; }
+  .oculto { display:none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="topo">
+      <div>
+        <div class="titulo">Reunião Picciani</div>
+        <div class="sub">Cadastro de presença</div>
+      </div>
+      <div class="contador"><em id="total" style="font-style:normal">0</em><span>cadastrados</span></div>
+    </div>
+    <div class="status"><i class="dot" id="statusDot"></i><span id="statusTexto">Carregando…</span></div>
+    <div class="abas">
+      <button id="tabForm" class="on">Cadastrar</button>
+      <button id="tabLista">Lista</button>
+    </div>
+  </header>
+
+  <main id="telaForm">
+    <div class="campo">
+      <label for="nome">Nome completo</label>
+      <input id="nome" placeholder="Maria da Silva" autocomplete="off">
+    </div>
+    <div class="campo">
+      <label for="tel">Telefone / WhatsApp</label>
+      <input id="tel" class="mono" inputmode="tel" placeholder="(22) 90000-0000">
+    </div>
+    <div class="campo">
+      <label for="bairro">Bairro</label>
+      <input id="bairro" placeholder="Digite o bairro" autocomplete="off">
+      <div class="sugestoes" id="sugBairro"></div>
+    </div>
+    <div class="campo">
+      <label for="ind">Quem indicou</label>
+      <input id="ind" placeholder="Nome da liderança" autocomplete="off">
+      <div class="sugestoes" id="sugInd"></div>
+    </div>
+  </main>
+
+  <footer id="rodapeForm">
+    <div id="toast" class="toast oculto"></div>
+    <button class="salvar" id="btnSalvar">Salvar e próximo</button>
+  </footer>
+
+  <main id="telaLista" class="oculto">
+    <input id="busca" class="busca" placeholder="Buscar nome, bairro ou indicação" autocomplete="off">
+    <div class="linha-meta">
+      <div class="rotulo" id="resultado">—</div>
+      <button class="sinc" id="btnSinc">Sincronizar</button>
+    </div>
+    <div class="destino">
+      <div class="gs">GS</div>
+      <div style="min-width:0;flex:1">
+        <b>Planilha do Google</b>
+        <small id="destinoTexto">—</small>
+      </div>
+      <i class="dot" id="destinoDot"></i>
+    </div>
+    <div class="lista" id="lista"></div>
+  </main>
+</div>
+
+<script>
+const CHAVE_FILA = 'cad_fila_v1';
+const CHAVE_ENVIADOS = 'cad_enviados_v1';
+const CHAVE_DISPOSITIVO = 'cad_dispositivo_v1';
+
+const $ = (id) => document.getElementById(id);
+const ler = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k)) || padrao; } catch (e) { return padrao; } };
+const gravar = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+let fila = ler(CHAVE_FILA, []);
+let enviados = ler(CHAVE_ENVIADOS, []);
+let totalPlanilha = 0;
+let sincronizando = false;
+
+let dispositivo = localStorage.getItem(CHAVE_DISPOSITIVO);
+if (!dispositivo) {
+  dispositivo = prompt('Quem está cadastrando neste celular?') || 'não identificado';
+  localStorage.setItem(CHAVE_DISPOSITIVO, dispositivo);
+}
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+function mascara(v) {
+  const d = (v || '').replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 2) return d.length ? '(' + d : '';
+  if (d.length <= 7) return '(' + d.slice(0, 2) + ') ' + d.slice(2);
+  return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
+}
+const primeiro = (n) => (n || '').trim().split(/\s+/)[0] || '';
+const iniciais = (n) => (n || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function todos() {
+  return fila.concat(enviados);
+}
+
+function mostrarToast(msg, erro) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (erro ? ' erro' : '');
+  clearTimeout(mostrarToast._t);
+  mostrarToast._t = setTimeout(() => t.classList.add('oculto'), 2400);
+}
+
+function pintarStatus() {
+  const pend = fila.length;
+  $('total').textContent = totalPlanilha + pend;
+  $('statusDot').style.background = pend ? '#FFD21E' : '#2FA36B';
+  $('statusTexto').textContent = pend
+    ? (navigator.onLine ? 'Enviando — ' : 'Offline — ') + pend + ' aguardando envio'
+    : 'Tudo salvo na planilha';
+  $('destinoDot').style.background = pend ? '#FFD21E' : '#2FA36B';
+  $('destinoTexto').textContent = pend
+    ? pend + (pend === 1 ? ' linha' : ' linhas') + ' na fila para enviar'
+    : 'Todas as linhas enviadas · ' + totalPlanilha + ' na planilha';
+  $('btnSinc').textContent = pend ? 'Sincronizar ' + pend : 'Tudo sincronizado';
+}
+
+function chips(destino, valores, aoEscolher) {
+  destino.innerHTML = '';
+  valores.slice(0, 3).forEach(function (v) {
+    const b = document.createElement('button');
+    b.textContent = v;
+    b.onclick = () => { aoEscolher(v); };
+    destino.appendChild(b);
+  });
+}
+
+function pintarSugestoes() {
+  const digitado = norm($('bairro').value);
+  const bairros = [...new Set(todos().map(r => r.bairro).filter(Boolean))]
+    .filter(b => norm(b).includes(digitado) && norm(b) !== digitado);
+  chips($('sugBairro'), bairros, v => { $('bairro').value = v; pintarSugestoes(); });
+
+  const inds = [...new Set(todos().map(r => r.quem_indicou).filter(Boolean))];
+  chips($('sugInd'), inds, v => { $('ind').value = v; });
+}
+
+function pintarLista() {
+  const q = norm($('busca').value);
+  const itens = todos().filter(r => !q || [r.nome, r.bairro, r.quem_indicou].some(v => norm(v).includes(q)));
+  $('resultado').textContent = q
+    ? itens.length + (itens.length === 1 ? ' resultado' : ' resultados')
+    : todos().length + ' na lista deste celular';
+
+  const box = $('lista');
+  box.innerHTML = '';
+  if (!itens.length) {
+    const v = document.createElement('div');
+    v.className = 'vazio';
+    v.textContent = q ? 'Nenhum cadastro encontrado.' : 'Ninguém cadastrado ainda neste celular.';
+    box.appendChild(v);
+    return;
+  }
+  itens.forEach(function (r) {
+    const pendente = fila.some(f => f.id === r.id);
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML =
+      '<div class="ini"></div>' +
+      '<div style="min-width:0;flex:1"><div class="nome"></div><div class="meta"></div></div>' +
+      '<div class="dir"><div class="tel"></div><div class="est"><i class="dot"></i><span></span></div></div>';
+    el.querySelector('.ini').textContent = iniciais(r.nome);
+    el.querySelector('.nome').textContent = r.nome;
+    el.querySelector('.meta').textContent =
+      (r.bairro || 'sem bairro') + ' · ' + (r.quem_indicou ? 'ind. ' + primeiro(r.quem_indicou) : 'sem indicação');
+    el.querySelector('.tel').textContent = r.telefone || '—';
+    el.querySelector('.est .dot').style.background = pendente ? '#FFD21E' : '#2FA36B';
+    el.querySelector('.est span').textContent = pendente ? 'offline' : 'enviado';
+    box.appendChild(el);
+  });
+}
+
+function salvar() {
+  const nome = $('nome').value.trim();
+  if (!nome) { mostrarToast('Preencha o nome', true); return; }
+
+  fila.push({
+    id: uuid(),
+    data_hora: new Date().toISOString(),
+    nome: nome,
+    telefone: $('tel').value.trim(),
+    bairro: $('bairro').value.trim(),
+    quem_indicou: $('ind').value.trim(),
+    cadastrado_por: dispositivo,
+  });
+  gravar(CHAVE_FILA, fila);
+
+  $('nome').value = '';
+  $('tel').value = '';
+  $('bairro').value = '';
+  $('nome').focus();
+
+  mostrarToast(primeiro(nome) + ' salvo. Próximo!');
+  pintarStatus();
+  pintarSugestoes();
+  sincronizar();
+}
+
+function sincronizar() {
+  if (sincronizando || !fila.length || !navigator.onLine) return;
+  sincronizando = true;
+  pintarStatus();
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      sincronizando = false;
+      const ok = res.gravados || [];
+      enviados = fila.filter(r => ok.indexOf(r.id) !== -1).concat(enviados).slice(0, 300);
+      fila = fila.filter(r => ok.indexOf(r.id) === -1);
+      totalPlanilha = res.total;
+      gravar(CHAVE_FILA, fila);
+      gravar(CHAVE_ENVIADOS, enviados);
+      pintarStatus();
+      pintarLista();
+    })
+    .withFailureHandler(function () {
+      sincronizando = false;
+      pintarStatus();
+    })
+    .salvarRegistros(fila);
+}
+
+function carregarTotal() {
+  google.script.run.withSuccessHandler(function (n) {
+    totalPlanilha = n;
+    pintarStatus();
+  }).contarCadastros();
+}
+
+function aba(qual) {
+  const form = qual === 'form';
+  $('tabForm').classList.toggle('on', form);
+  $('tabLista').classList.toggle('on', !form);
+  $('telaForm').classList.toggle('oculto', !form);
+  $('rodapeForm').classList.toggle('oculto', !form);
+  $('telaLista').classList.toggle('oculto', form);
+  if (!form) pintarLista();
+}
+
+$('btnSalvar').onclick = salvar;
+$('btnSinc').onclick = sincronizar;
+$('tabForm').onclick = () => aba('form');
+$('tabLista').onclick = () => aba('lista');
+$('tel').oninput = (e) => { e.target.value = mascara(e.target.value); };
+$('bairro').oninput = pintarSugestoes;
+$('busca').oninput = pintarLista;
+$('nome').onkeydown = (e) => { if (e.key === 'Enter') $('tel').focus(); };
+window.addEventListener('online', sincronizar);
+setInterval(sincronizar, 20000);
+
+pintarStatus();
+pintarSugestoes();
+carregarTotal();
+sincronizar();
+</script>
+</body>
+</html>

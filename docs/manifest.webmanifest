@@ -1,0 +1,19 @@
+{
+  "name": "Cadastro Reunião",
+  "short_name": "Cadastro",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B3C8C",
+  "theme_color": "#0B3C8C",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
