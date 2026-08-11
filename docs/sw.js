@@ -1,4 +1,4 @@
-const CACHE = 'cadastro-v2';
+const CACHE = 'cadastro-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -17,6 +17,7 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;                       // envios para o Apps Script passam direto
   if (new URL(req.url).origin !== self.location.origin) return;
+  if (req.mode === 'navigate') { e.respondWith(fetch(req).catch(() => caches.match('./index.html'))); return; }
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       const copia = res.clone();
