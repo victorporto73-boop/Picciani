@@ -1,4 +1,4 @@
-const CACHE = 'cadastro-v1';
+const CACHE = 'cadastro-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (e) => {
