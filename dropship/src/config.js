@@ -3,7 +3,7 @@
 const env = process.env;
 
 module.exports = {
-  APP_NOME: env.APP_NOME || 'Picciani Drop',
+  APP_NOME: env.APP_NOME || 'VeR',
   PORT: Number(env.PORT || 3000),
   BASE_URL: env.BASE_URL || `http://localhost:${env.PORT || 3000}`,
   // "simulado": recargas Pix podem ser confirmadas por um botão (desenvolvimento/demonstração).
