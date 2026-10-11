@@ -1,0 +1,16 @@
+{
+  "name": "plataforma-dropship",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma de dropshipping nacional: catálogo para lojistas, vitrine própria, carteira pré-paga, pedidos, painel administrativo e API.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "license": "UNLICENSED"
+}

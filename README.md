@@ -57,3 +57,8 @@ hospedada no Apps Script, que exige internet para carregar.
 Com "quem tem acesso: qualquer pessoa", qualquer um com a URL `/exec` pode gravar na
 planilha. Não publique essa URL em lugar aberto. Se precisar de controle, dê a URL apenas
 aos cadastradores e troque a implantação depois da reunião.
+
+---
+
+Este repositório também contém, em [`dropship/`](dropship/README.md), uma plataforma de
+dropshipping independente do app de cadastro acima.
