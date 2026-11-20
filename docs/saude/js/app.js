@@ -2,12 +2,29 @@
 // agenda integrada, alertas, atividade, usuários e configurações.
 
 import { CONFIG } from './config.js';
-import { store, PERFIS } from './store.js';
+import { store, PERFIS, EM_ARTEFATO } from './store.js';
 import { MODULOS, MOD, GRUPOS, valorCampo, nivelEstoque, estaAberto, obrigacoesLegais, TODAS_COLECOES } from './modulos.js';
 import {
   h, hoje, addDias, diasAte, fmtData, fmtDataHora, fmtHora, fmtNum, fmtPct, fmtMoedaCurta, tempoRelativo,
   normalizar, iniciais, csv, baixar, debounce, paraData, isoData, semanaEpi, repor,
 } from './util.js';
+
+const NIVEIS_CLAUDE = [
+  ['Proprietário ou Editor', 'Administrador: tudo, inclusive dados da Secretaria'],
+  ['Colaborador (Contributor)', 'Editor: cadastra e altera em todos os módulos'],
+  ['Comentarista ou Leitor', 'Consulta: só leitura'],
+];
+
+/** Oferece um arquivo para salvar. Dentro do Claude, pela confirmação da plataforma. */
+async function salvarArquivo(nome, conteudo, tipo) {
+  if (!EM_ARTEFATO) { baixar(nome, conteudo, tipo); return true; }
+  const dl = await window.claude.use('downloads');
+  if (!dl) { toast('Salvar arquivos não está disponível nesta visualização.', 'warn'); return false; }
+  try { await dl.save({ filename: nome, data: conteudo }); return true; } catch (e) {
+    if (e && e.code !== 'declined') toast('Não foi possível salvar o arquivo.', 'warn');
+    return false;
+  }
+}
 import { icone } from './icones.js';
 import {
   toast, ativarDicas, abrirGaveta, fecharGaveta, gavetaAberta, confirmar, chip, chipPrazo, chipNivel, barraPct, selo,
@@ -41,7 +58,7 @@ async function iniciar() {
 }
 
 function registrarSW() {
-  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  if (EM_ARTEFATO || !('serviceWorker' in navigator) || location.protocol === 'file:') return;
   navigator.serviceWorker.register('sw.js').catch(() => { /* sem SW: o app funciona online normalmente */ });
 }
 
@@ -59,7 +76,9 @@ function telaBoasVindas(erro = '') {
       h('h1', null, 'Painel de controle da Secretaria'),
       h('p', { class: 'muted' }, 'Rede, regulação, farmácia, vigilância, judicialização, ouvidoria, contratos, orçamento e metas em uma só tela, com atualização em tempo real entre todos os setores.'),
       erro && h('p', { class: 'erro' }, erro),
-      formularioLogin(true),
+      EM_ARTEFATO
+        ? h('div', { class: 'faixa-info' }, icone('info', 16), h('span', null, 'Os dados da Secretaria ficam guardados neste aplicativo, dentro do Claude, e só aparecem para quem entrou com uma conta Claude que tenha acesso a ele. Se você já tem acesso, entre na sua conta e abra o aplicativo de novo.'))
+        : formularioLogin(true),
       h('div', { class: 'divisor' }, h('span', null, 'ou')),
       h('button', { class: 'btn btn-bloco', onclick: async () => { await store.iniciarDemo(); montarApp(); } }, icone('olho', 16), 'Explorar em modo demonstração (dados fictícios)'),
       h('p', { class: 'nota' }, 'No modo demonstração os dados ficam só neste navegador e uma equipe simulada faz alterações a cada poucos segundos, para mostrar o painel ao vivo.'))));
@@ -136,7 +155,7 @@ function montarApp() {
       h('header', { class: 'topo' },
         h('button', { class: 'icone-btn so-mobile', 'aria-label': 'Menu', onclick: () => document.body.classList.toggle('menu-aberto') }, icone('menu', 22)),
         elBusca, h('div', { class: 'topo-dir' }, elStatus, elPresenca, elSino)),
-      store.modo === 'demo' && h('div', { class: 'faixa-demo' }, icone('info', 15), h('span', null, 'Modo demonstração — todos os dados são fictícios. Uma equipe simulada está trabalhando agora.'), h('button', { class: 'link', onclick: async () => { await store.sair(); location.hash = ''; location.reload(); } }, 'Conectar ao servidor')),
+      store.modo === 'demo' && h('div', { class: 'faixa-demo' }, icone('info', 15), h('span', null, 'Modo demonstração — todos os dados são fictícios. Uma equipe simulada está trabalhando agora.'), h('button', { class: 'link', onclick: sairDaDemo }, EM_ARTEFATO ? 'Usar os dados da Secretaria' : 'Conectar ao servidor')),
       elMain)));
 
   rotear();
@@ -149,7 +168,14 @@ function usuarioBloco() {
     h('span', { class: 'avatar' }, iniciais(u.nome)),
     h('div', { class: 'usuario-txt' }, h('b', null, u.nome || ''), h('small', null, PERFIS[u.perfil] ? PERFIS[u.perfil].split(' —')[0].split(' (')[0] : '')),
     h('a', { href: '#/config', class: 'icone-btn', 'aria-label': 'Configurações', 'data-dica': 'Configurações' }, icone('config', 18)),
-    h('button', { class: 'icone-btn', 'aria-label': 'Sair', 'data-dica': 'Sair', onclick: sair }, icone('sair', 18)));
+    store.modo !== 'claude' && h('button', { class: 'icone-btn', 'aria-label': 'Sair', 'data-dica': 'Sair', onclick: sair }, icone('sair', 18)));
+}
+
+async function sairDaDemo() {
+  await store.sair();
+  store.escolherModo('');
+  location.hash = '';
+  location.reload();
 }
 
 async function sair() {
@@ -219,7 +245,7 @@ function alternarPainelAlertas() {
   const pop = h('div', { class: 'pop pop-alertas' },
     h('div', { class: 'pop-cab' }, h('b', null, 'Alertas'), h('a', { href: '#/alertas', onclick: () => pop.remove() }, 'Ver todos')),
     lista.length ? h('div', { class: 'pop-lista' }, lista.slice(0, 14).map((a) => linhaAlerta(a, () => pop.remove()))) : vazio('Nenhum alerta no momento.'),
-    'Notification' in window && Notification.permission === 'default' && h('button', { class: 'btn btn-bloco', onclick: pedirNotificacoes }, icone('sino', 16), 'Receber avisos urgentes no navegador'));
+    !EM_ARTEFATO && 'Notification' in window && Notification.permission === 'default' && h('button', { class: 'btn btn-bloco', onclick: pedirNotificacoes }, icone('sino', 16), 'Receber avisos urgentes no navegador'));
   document.body.append(pop);
   const fora = (e) => { if (!pop.contains(e.target) && !elSino.contains(e.target)) { pop.remove(); document.removeEventListener('mousedown', fora); } };
   setTimeout(() => document.addEventListener('mousedown', fora), 0);
@@ -252,7 +278,7 @@ function atualizarStatus() {
   const pend = store.fila.length;
   const mapa = {
     demo: ['ao-vivo', 'Ao vivo', 'Demonstração'],
-    online: ['ao-vivo', 'Ao vivo', ultima ? `sincronizado ${tempoRelativo(ultima)}` : ''],
+    online: ['ao-vivo', 'Ao vivo', store.modo === 'claude' ? 'tempo real' : ultima ? `sincronizado ${tempoRelativo(ultima)}` : ''],
     enviando: ['enviando', 'Enviando', `${pend} alteração(ões)`],
     conectando: ['enviando', 'Conectando', ''],
     iniciando: ['enviando', 'Conectando', ''],
@@ -261,7 +287,7 @@ function atualizarStatus() {
   };
   const [cls, a, b] = mapa[estado] || mapa.conectando;
   elStatus.className = `status-ao-vivo st-${cls}`;
-  elStatus.setAttribute('data-dica', erro || (estado === 'demo' ? 'Alterações simuladas a cada poucos segundos' : `Sincroniza a cada ${CONFIG.POLL_VISIVEL_MS / 1000}s`));
+  elStatus.setAttribute('data-dica', erro || (estado === 'demo' ? 'Alterações simuladas a cada poucos segundos' : store.modo === 'claude' ? 'Alterações de qualquer pessoa chegam na hora' : `Sincroniza a cada ${CONFIG.POLL_VISIVEL_MS / 1000}s`));
   repor(elStatus, h('i', { class: 'pulso' }), h('b', null, a), b && h('span', null, b),
     store.modo === 'servidor' && h('button', { class: 'icone-btn mini', 'aria-label': 'Sincronizar agora', onclick: () => store.ciclo() }, icone('sync', 14)));
 }
@@ -271,8 +297,9 @@ function atualizarPresenca() {
   const eu = store.usuario && store.usuario.login;
   const lim = Date.now() - 120000;
   const on = (store.online || []).filter((u) => u.login !== eu && (!u.t || new Date(u.t).getTime() > lim));
-  repor(elPresenca, ...on.slice(0, 4).map((u) => h('span', { class: 'avatar mini', 'data-dica': `${u.nome} — conectado(a)` }, iniciais(u.nome))),
-    on.length > 4 ? h('span', { class: 'avatar mini mais', 'data-dica': on.slice(4).map((u) => u.nome).join(', ') }, `+${on.length - 4}`) : null);
+  const nm = (u) => u.nome || store.nome(u.login);
+  repor(elPresenca, ...on.slice(0, 4).map((u) => h('span', { class: 'avatar mini', 'data-dica': `${nm(u)} — conectado(a)` }, iniciais(nm(u)))),
+    on.length > 4 ? h('span', { class: 'avatar mini mais', 'data-dica': on.slice(4).map(nm).join(', ') }, `+${on.length - 4}`) : null);
   elPresenca.setAttribute('aria-label', `${on.length} pessoa(s) conectada(s)`);
 }
 
@@ -341,6 +368,7 @@ function aoMudarStore(info) {
   if (info.sessao === 'expirada') { telaLogin('Sua sessão expirou. Entre novamente.'); return; }
   if (info.aviso) toast(info.aviso, 'warn', 7000);
   if (info.conexao || info.presenca) { atualizarStatus(); atualizarPresenca(); }
+  if (info.nomes) { atualizarPresenca(); redesenhar(); if (regAberto) regAberto.verificar(); }
   if (info.colecoes && info.colecoes.size) {
     if (!tela || tela.depende === '*' || [...info.colecoes].some((c) => tela.depende.has(c))) redesenhar();
     else atualizarCromo();
@@ -400,7 +428,7 @@ function telaPainel() {
     h('div', null,
       h('h1', null, `${saud()}, ${(store.usuario.nome || '').split(' ')[0]}`),
       h('p', { class: 'muted' }, `${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${store.config().orgao}`)),
-    h('div', { class: 'acoes' }, h('button', { class: 'btn', onclick: () => window.print() }, icone('imprimir', 16), 'Relatório')));
+    !EM_ARTEFATO && h('div', { class: 'acoes' }, h('button', { class: 'btn', onclick: () => window.print() }, icone('imprimir', 16), 'Relatório')));
   elMain.append(cab, corpo);
 
   const desenhar = () => {
@@ -495,7 +523,9 @@ function telaPainel() {
       h('b', null, a.titulo), h('p', null, a.mensagem))) : vazio('Nenhum aviso vigente.'),
     store.podeEditar('avisos') && h('a', { class: 'ver-mais', href: '#/m/avisos/novo' }, 'Publicar aviso'));
 
-    repor(corpo, 
+    const vazioTotal = store.modo === 'claude' && MODULOS.every((m) => !store.lista(m.id).length);
+    repor(corpo,
+      vazioTotal && primeirosPassos(),
       h('div', { class: 'impressao-cab' }, `${store.config().orgao} — Relatório gerencial de ${new Date().toLocaleString('pt-BR')}`),
       kpis,
       h('div', { class: 'grade-painel' },
@@ -504,6 +534,21 @@ function telaPainel() {
   };
   tela = { rota: 'painel', depende: '*', atualizar: desenhar };
   desenhar();
+}
+
+function primeirosPassos() {
+  const pode = store.podeEditar('unidades');
+  const passo = (n, texto, href, rotulo) => h('li', null, h('span', { class: 'pp-num' }, n), h('span', null, texto, ' ', pode && href ? h('a', { href }, rotulo) : null));
+  return h('section', { class: 'bloco primeiros' },
+    h('div', { class: 'bloco-cab' }, h('h2', null, 'Primeiros passos'), h('span', { class: 'muted' }, 'o aplicativo ainda não tem dados')),
+    pode
+      ? h('ol', { class: 'pp' },
+        passo(1, 'Cadastre as unidades da rede (hospital, UPA, UBS/ESF, CAPS, farmácia).', '#/m/unidades/novo', 'Cadastrar unidade'),
+        passo(2, 'Lance os mandados judiciais e ofícios com prazo em aberto.', '#/m/judicial/novo', 'Cadastrar mandado'),
+        passo(3, 'Registre os contratos vigentes e a dotação do Fundo de Saúde.', '#/m/contratos/novo', 'Cadastrar contrato'),
+        passo(4, 'Compartilhe este aplicativo com as coordenações pelo botão Compartilhar do Claude. Quem tiver acesso de Colaborador cadastra e altera.', null, ''))
+      : h('p', null, 'Assim que a equipe cadastrar unidades, prazos e demandas, o painel mostra aqui os indicadores e alertas.'),
+    h('p', { class: 'nota' }, 'Quer ver como fica com dados? ', h('button', { class: 'link', onclick: () => { store.escolherModo('demo'); location.reload(); } }, 'Abrir a demonstração com dados fictícios'), '.'));
 }
 
 function secao(titulo, sub, ...conteudo) {
@@ -523,7 +568,7 @@ function feed(eventos) {
     const titulo = e.t || (m && reg ? m.titulo(reg) : '');
     const campos = (e.f || []).map((k) => { const f = m && m.campos.find((x) => x.k === k); return f ? f.l.toLowerCase() : null; }).filter(Boolean);
     const eu = store.usuario && e.u === store.usuario.login;
-    const nome = eu ? 'Você' : e.n || e.u;
+    const nome = eu ? 'Você' : e.n || store.nome(e.u, 'Alguém');
     const visivel = m ? store.podeVer(e.c) : e.c === 'comentarios';
     if (!visivel) return null;
     const href = e.c === 'comentarios' && reg ? `#/m/${reg.colecao}/${reg.registro}` : m ? `#/m/${e.c}/${e.id}` : null;
@@ -839,7 +884,7 @@ function abrirRegistro(c, id) {
       h('small', { class: 'muted' }, icone(m.icone, 14), ` ${m.singular}`),
       h('h2', null, atual ? m.titulo(atual) : `Novo(a): ${m.singular.toLowerCase()}`),
       atual && h('div', { class: 'linha-chips' }, m.status && chip(atual[m.status], tomStatus(m, atual)), atual._pend && chip('aguardando envio', 'info'),
-        h('small', { class: 'muted' }, `Atualizado por ${atual.atualizado_por || '—'} · `, h('span', { 'data-quando': atual.atualizado_em }, tempoRelativo(atual.atualizado_em)))));
+        h('small', { class: 'muted' }, `Atualizado por ${store.nome(atual.atualizado_por, '—')} · `, h('span', { 'data-quando': atual.atualizado_em }, tempoRelativo(atual.atualizado_em)))));
   };
 
   const formulario = () => {
@@ -942,12 +987,12 @@ function abrirRegistro(c, id) {
     const enviar = () => {
       const t = txt.value.trim();
       if (!t) return;
-      try { store.salvar('comentarios', { colecao: c, registro: r.id, texto: t, autor: store.usuario.nome }); txt.value = ''; } catch (err) { toast(err.message, 'crit'); }
+      try { store.salvar('comentarios', { colecao: c, registro: r.id, texto: t, autor: store.autorAtual() }); txt.value = ''; } catch (err) { toast(err.message, 'crit'); }
     };
     txt.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) enviar(); });
     return h('div', { class: 'comentarios' },
-      lista.length ? lista.map((x) => h('div', { class: `coment ${flash(x.id)}` }, h('span', { class: 'avatar mini' }, iniciais(x.autor || x.criado_por)),
-        h('div', null, h('p', null, h('b', null, x.autor || x.criado_por), ' ', h('small', { class: 'muted', 'data-quando': x.criado_em }, tempoRelativo(x.criado_em)), x._pend ? h('small', { class: 'muted' }, ' · enviando') : null), h('p', { class: 'coment-txt' }, x.texto)))) : vazio('Sem comentários ainda.'),
+      lista.length ? lista.map((x) => h('div', { class: `coment ${flash(x.id)}` }, h('span', { class: 'avatar mini' }, iniciais(store.nome(x.autor || x.criado_por))),
+        h('div', null, h('p', null, h('b', null, store.nome(x.autor || x.criado_por)), ' ', h('small', { class: 'muted', 'data-quando': x.criado_em }, tempoRelativo(x.criado_em)), x._pend ? h('small', { class: 'muted' }, ' · enviando') : null), h('p', { class: 'coment-txt' }, x.texto)))) : vazio('Sem comentários ainda.'),
       h('div', { class: 'coment-novo' }, txt, h('button', { class: 'btn btn-pri', onclick: enviar, 'aria-label': 'Enviar comentário' }, icone('enviar', 16))));
   };
 
@@ -955,14 +1000,14 @@ function abrirRegistro(c, id) {
   const abaHistorico = () => {
     const caixa = h('div', { class: 'historico' });
     const desenharH = (evs) => repor(caixa, 
-      h('p', { class: 'nota' }, `Criado por ${r.criado_por || '—'} em ${fmtDataHora(r.criado_em ? new Date(r.criado_em) : '')}.`),
-      evs.length ? h('ol', { class: 'feed' }, evs.map((e) => h('li', { class: 'feed-item' }, h('span', { class: 'avatar mini' }, iniciais(e.n || e.u)),
-        h('div', null, h('p', null, h('b', null, e.n || e.u), ` ${ROTULO_ACAO[e.a] || e.a}`, (e.f || []).length ? h('span', { class: 'muted' }, ` — ${(e.f || []).map((k) => (m.campos.find((x) => x.k === k) || { l: k }).l).join(', ')}`) : ''),
+      h('p', { class: 'nota' }, `Criado por ${store.nome(r.criado_por, '—')} em ${fmtDataHora(r.criado_em ? new Date(r.criado_em) : '')}.`),
+      evs.length ? h('ol', { class: 'feed' }, evs.map((e) => h('li', { class: 'feed-item' }, h('span', { class: 'avatar mini' }, iniciais(e.n || store.nome(e.u))),
+        h('div', null, h('p', null, h('b', null, e.n || store.nome(e.u)), ` ${ROTULO_ACAO[e.a] || e.a}`, (e.f || []).length ? h('span', { class: 'muted' }, ` — ${(e.f || []).map((k) => (m.campos.find((x) => x.k === k) || { l: k }).l).join(', ')}`) : ''),
           h('small', { class: 'muted' }, fmtDataHora(new Date(e.q))))))) : vazio('Sem eventos registrados nesta sessão.'));
     const locais = store.eventos.filter((e) => e.c === c && e.id === r.id);
     desenharH(historicoServidor || locais);
-    if (store.modo === 'servidor' && !historicoServidor) {
-      store.chamar('historico', { c, id: r.id }).then((j) => { historicoServidor = j.eventos || []; if (aba === 'historico') desenharH(historicoServidor); }).catch(() => { /* mantém o local */ });
+    if (store.modo !== 'demo' && !historicoServidor) {
+      store.historico(c, r.id).then((evs) => { if (!evs) return; historicoServidor = evs; if (aba === 'historico') desenharH(historicoServidor); }).catch(() => { /* mantém o local */ });
     }
     return caixa;
   };
@@ -985,11 +1030,11 @@ function abrirRegistro(c, id) {
       class: 'btn', 'data-dica': 'Cria uma demanda já vinculada a este registro',
       onclick: () => { novoComPadrao.tarefas = { titulo: `Providenciar: ${m.titulo(r)}`, vinculo: `${c}:${r.id}`, origem: `${m.singular} ${m.titulo(r)}`, prazo: m.prazo && r[m.prazo] ? String(r[m.prazo]).slice(0, 10) : addDias(hoje(), 3) }; regAberto = null; irPara('#/m/tarefas/novo'); },
     }, icone('tarefas', 15), 'Gerar demanda'),
-    r && h('button', { class: 'icone-btn', 'aria-label': 'Copiar link', 'data-dica': 'Copiar link deste registro', onclick: () => { navigator.clipboard?.writeText(location.href.split('#')[0] + `#/m/${c}/${r.id}`); toast('Link copiado.', 'ok', 2000); } }, icone('link', 18)),
+    r && !EM_ARTEFATO && h('button', { class: 'icone-btn', 'aria-label': 'Copiar link', 'data-dica': 'Copiar link deste registro', onclick: () => { navigator.clipboard?.writeText(location.href.split('#')[0] + `#/m/${c}/${r.id}`); toast('Link copiado.', 'ok', 2000); } }, icone('link', 18)),
     h('button', { class: 'icone-btn', 'aria-label': 'Fechar', onclick: () => fecharRegistro() }, icone('fechar', 20)));
 
   const painel = abrirGaveta(h('div', { class: 'reg' }, h('div', { class: 'reg-cab' }, cabTitulo, acoesTopo), banner, abasEl, corpo), {
-    aoFechar: () => { regAberto = null; if (location.hash.split('/').length > 3) history.replaceState(null, '', `#/m/${c}`); montarNav(); },
+    aoFechar: () => { regAberto = null; if (location.hash.split('/').length > 3) { try { history.replaceState(null, '', `#/m/${c}`); } catch { /* */ } } montarNav(); },
   });
 
   regAberto = {
@@ -1002,7 +1047,7 @@ function abrirRegistro(c, id) {
       estado.v = atual._v;
       if (estado.sujo && aba === 'dados') {
         banner.hidden = false;
-        repor(banner, icone('sync', 16), h('span', null, ` ${atual.atualizado_por} alterou este registro agora. `),
+        repor(banner, icone('sync', 16), h('span', null, ` ${store.nome(atual.atualizado_por, 'Outra pessoa')} alterou este registro agora. `),
           h('button', { class: 'link', onclick: () => { r = atual; Object.keys(valores).forEach((k) => delete valores[k]); Object.assign(valores, atual); estado.sujo = false; banner.hidden = true; desenharCab(); desenharCorpo(); } }, 'Carregar a versão atual'),
           h('span', { class: 'muted' }, ' (suas alterações não salvas serão descartadas; campos diferentes dos que você editou são mesclados ao salvar)'));
       } else {
@@ -1074,6 +1119,13 @@ function telaUsuarios() {
     h('table', { class: 'tabela' }, h('tbody', null, Object.entries(PERFIS).map(([k, l]) => h('tr', null, h('td', { class: 'mono' }, k), h('td', null, l))))));
 
   async function carregar() {
+    if (store.modo === 'claude') {
+      repor(corpo, h('div', { class: 'faixa-info' }, icone('info', 16), h('span', null, 'Dentro do Claude, quem entra é definido no botão ', h('b', null, 'Compartilhar'), ' deste aplicativo: cada pessoa usa a própria conta Claude, e o nível de acesso dela define o perfil. Os dados aparecem só para quem tem acesso.')),
+        h('div', { class: 'bloco' }, h('div', { class: 'bloco-cab' }, h('h2', null, 'Nível no compartilhamento → perfil no sistema')),
+          h('table', { class: 'tabela' }, h('tbody', null, NIVEIS_CLAUDE.map(([a, b]) => h('tr', null, h('td', null, a), h('td', null, b)))))),
+        h('p', { class: 'nota' }, 'A restrição por módulo (por exemplo, a farmácia ver só Farmácia e Insumos) existe na versão com servidor da Secretaria (Apps Script). Aqui, quem tem acesso vê todos os módulos.'));
+      return;
+    }
     if (store.modo === 'demo') {
       repor(corpo, h('div', { class: 'faixa-info' }, icone('info', 16), 'No modo demonstração os usuários são simulados. Conectado ao servidor, esta tela cria e edita usuários, redefine senhas e desativa acessos.'), perfisTabela);
       return;
@@ -1140,18 +1192,19 @@ function telaConfig() {
     h('div', null, h('h1', null, 'Configurações'), h('p', { class: 'muted' }, 'Conexão, dados da Secretaria, sua conta e privacidade.')))), corpo);
   tela = { rota: 'config', depende: new Set(), atualizar: () => {} };
 
-  const conexao = secao('Conexão', store.modo === 'demo' ? 'modo demonstração' : 'servidor da Secretaria',
+  const conexao = secao('Conexão', store.modo === 'demo' ? 'modo demonstração' : store.modo === 'claude' ? 'dentro do Claude' : 'servidor da Secretaria',
     h('dl', { class: 'dl' },
-      h('dt', null, 'Modo'), h('dd', null, store.modo === 'demo' ? 'Demonstração (dados fictícios, só neste navegador)' : 'Servidor — Google Apps Script + Planilha'),
+      h('dt', null, 'Modo'), h('dd', null, store.modo === 'demo' ? 'Demonstração (dados fictícios, só neste navegador)' : store.modo === 'claude' ? 'Claude — dados compartilhados entre as pessoas com acesso a este aplicativo' : 'Servidor — Google Apps Script + Planilha'),
       store.modo === 'servidor' && [h('dt', null, 'Servidor'), h('dd', { class: 'mono quebra' }, store.url)],
-      h('dt', null, 'Usuário'), h('dd', null, `${store.usuario.nome} (${store.usuario.login}) — ${PERFIS[store.usuario.perfil] || store.usuario.perfil}`),
-      h('dt', null, 'Alterações na fila'), h('dd', null, String(store.fila.length)),
-      h('dt', null, 'Versão dos dados'), h('dd', { class: 'mono' }, `seq ${store.seq}`)),
+      h('dt', null, 'Usuário'), h('dd', null, store.modo === 'claude' ? `${store.usuario.nome} (conta Claude) — ${PERFIS[store.usuario.perfil] || store.usuario.perfil}` : `${store.usuario.nome} (${store.usuario.login}) — ${PERFIS[store.usuario.perfil] || store.usuario.perfil}`),
+      store.modo !== 'claude' && [h('dt', null, 'Alterações na fila'), h('dd', null, String(store.fila.length)),
+        h('dt', null, 'Versão dos dados'), h('dd', { class: 'mono' }, `seq ${store.seq}`)]),
     h('div', { class: 'acoes' },
       store.modo === 'servidor' && h('button', { class: 'btn', onclick: () => { store.ciclo(); toast('Sincronizando…', 'info', 1500); } }, icone('sync', 16), 'Sincronizar agora'),
       store.modo === 'servidor' && h('button', { class: 'btn', onclick: async () => { try { await store.carregarTudo(); toast('Dados recarregados do servidor.', 'ok'); } catch (e) { toast(e.message, 'crit'); } } }, 'Recarregar tudo'),
       store.modo === 'demo' && h('button', { class: 'btn', onclick: async () => { if (await confirmar('Restaurar os dados de demonstração originais?', 'Restaurar')) { await store.reiniciarDemo(); toast('Demonstração restaurada.', 'ok'); } } }, 'Restaurar demonstração'),
-      store.modo === 'demo' && h('button', { class: 'btn btn-pri', onclick: async () => { await store.sair(); location.hash = ''; location.reload(); } }, 'Conectar ao servidor'),
+      store.modo === 'demo' && h('button', { class: 'btn btn-pri', onclick: sairDaDemo }, EM_ARTEFATO ? 'Usar os dados da Secretaria' : 'Conectar ao servidor'),
+      store.modo === 'claude' && h('button', { class: 'btn', onclick: () => { store.escolherModo('demo'); location.reload(); } }, icone('olho', 16), 'Ver demonstração (dados fictícios)'),
       h('button', { class: 'btn', onclick: exportarBackup }, icone('baixar', 16), 'Exportar cópia (JSON)')));
 
   const val = { ...cfg.bruto, orgao: cfg.orgao, setores: cfg.setores.join('\n'), receita_base: cfg.receita_base || '', exercicio: cfg.exercicio };
@@ -1198,7 +1251,7 @@ function telaConfig() {
       h('li', null, 'Ao sair, os dados guardados neste aparelho são apagados. Em computador compartilhado, sempre use "Sair".'),
       h('li', null, 'Restrinja o compartilhamento da planilha aos administradores. Os demais usuários acessam só pelo sistema, com perfil e módulos definidos.')));
 
-  corpo.append(conexao, secao('Dados da Secretaria', '', fCfg), senha, notif, tema, lgpd);
+  corpo.append(conexao, secao('Dados da Secretaria', '', fCfg), senha, !EM_ARTEFATO && notif, !EM_ARTEFATO && tema, lgpd);
 }
 
 function exportarCSV(m) {
@@ -1208,16 +1261,15 @@ function exportarCSV(m) {
   const linhas = lista.map((r) => [
     ...m.campos.map((f) => valorCampo(f, r, ctx)),
     ...(m.calc || []).map((c) => { const x = c.v(r, m, ctx); return x == null ? '' : typeof x === 'number' ? fmtNum(x) : x; }),
-    r.atualizado_por || '', r.atualizado_em ? fmtDataHora(new Date(r.atualizado_em)) : '',
+    store.nome(r.atualizado_por), r.atualizado_em ? fmtDataHora(new Date(r.atualizado_em)) : '',
   ]);
-  baixar(`${m.id}-${hoje()}.csv`, csv([cab, ...linhas]));
-  toast(`${linhas.length} registro(s) exportado(s).`, 'ok', 2500);
+  salvarArquivo(`${m.id}-${hoje()}.csv`, csv([cab, ...linhas])).then((ok) => { if (ok) toast(`${linhas.length} registro(s) exportado(s).`, 'ok', 2500); });
 }
 
 function exportarBackup() {
   const dados = {};
   TODAS_COLECOES.forEach((c) => { if (store.podeVer(c)) dados[c] = store.lista(c); });
-  baixar(`gestao-saude-${hoje()}.json`, JSON.stringify({ exportado_em: new Date().toISOString(), por: store.usuario.login, seq: store.seq, dados }, null, 1), 'application/json');
+  salvarArquivo(`gestao-saude-${hoje()}.json`, JSON.stringify({ exportado_em: new Date().toISOString(), por: store.usuario.login, seq: store.seq, dados }, null, 1), 'application/json');
 }
 
 try { const t = localStorage.getItem('saude.tema'); if (t) document.documentElement.dataset.theme = t; } catch { /* */ }

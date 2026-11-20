@@ -41,6 +41,10 @@ com atualização em tempo real entre todos os usuários conectados.
 - Perfis (admin, gestor, editor, leitor) e módulos autorizados verificados no servidor;
   trilha de auditoria completa na aba `_Eventos`.
 
+**Dentro do Claude:** o mesmo app roda como artefato no Claude (`artefato/`), com os dados no
+armazenamento compartilhado do próprio artefato, login pela conta Claude e permissões pelo
+botão Compartilhar. Veja `artefato/LEIA-ME.md`.
+
 **Experimentar agora:** abra `/saude/` e escolha *Explorar em modo demonstração* (dados
 fictícios e uma equipe simulada alterando registros a cada poucos segundos).
 

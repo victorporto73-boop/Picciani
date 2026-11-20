@@ -10,6 +10,11 @@
 //    "patch" (somente os campos alterados). O servidor mescla campo a campo,
 //    então duas pessoas editando campos diferentes do mesmo registro não se
 //    sobrescrevem. Reenviar a fila não duplica nada.
+//
+// Modo "claude": quando o app roda como artefato dentro do Claude, os dados
+// ficam no armazenamento compartilhado do próprio artefato (capability `db`),
+// a identidade é a conta Claude de quem abre (capability `user`) e a presença
+// vem da capability `room`. As atualizações chegam por assinatura (push).
 
 import { CONFIG } from './config.js';
 import { MOD, TODAS_COLECOES, SETORES_PADRAO } from './modulos.js';
@@ -59,6 +64,10 @@ const pref = {
 const PREFIXO = { unidades: 'un', agenda: 'ag', tarefas: 'tf', avisos: 'av', ocorrencias: 'oc', regulacao: 'rg', estoque: 'es', escalas: 'ec', vigilancia: 'vg', campanhas: 'cp', judicial: 'jd', ouvidoria: 'ov', protocolo: 'pt', contratos: 'ct', orcamento: 'or', planejamento: 'pl', comentarios: 'cm', config: 'cf' };
 const RESERVADOS = new Set(['id', '_v', '_pend', 'criado_em', 'criado_por', 'atualizado_em', 'atualizado_por']);
 const MAX_EVENTOS = 300;
+const RETENCAO_EVENTOS_DIAS = 60; // modo claude: o artefato guarda no máximo 25 mil documentos
+
+/** O app está aberto como artefato dentro do Claude? */
+export const EM_ARTEFATO = typeof window !== 'undefined' && !!(window.claude && typeof window.claude.use === 'function');
 
 export const PERFIS = {
   admin: 'Administrador (Secretário / TI)',
@@ -69,7 +78,7 @@ export const PERFIS = {
 
 export class Store {
   constructor() {
-    this.modo = null;          // 'demo' | 'servidor'
+    this.modo = null;          // 'demo' | 'servidor' | 'claude'
     this.url = '';
     this.token = '';
     this.usuario = null;       // { login, nome, perfil, modulos, setor }
@@ -85,7 +94,32 @@ export class Store {
     this.ocupado = false;
     this.persistir = debounce(() => this.salvarCache(), 400);
     this.cicloLogo = debounce(() => this.ciclo(), 250);
+    this.nomes = new Map();    // modo claude: id da conta -> nome exibido
+    this.cadeias = new Map();  // modo claude: uma gravação por documento de cada vez
     TODAS_COLECOES.forEach((c) => { this.dados[c] = new Map(); });
+  }
+
+  /** Quem grava: no modo claude, o id da conta (nunca o nome); nos demais, o nome. */
+  autorAtual() { return this.modo === 'claude' ? this.usuario.login : this.usuario.nome; }
+
+  /** Nome para exibir de quem gravou (resolve ids no modo claude). */
+  nome(v, reserva = '') {
+    if (this.modo !== 'claude') return v || reserva;
+    if (!v) return reserva;
+    if (v === (this.usuario && this.usuario.login)) return this.usuario.nome || 'Você';
+    if (!this.nomes.has(v)) { this.resolverNomes([v]); return 'Alguém'; }
+    return this.nomes.get(v) || 'Alguém';
+  }
+
+  resolverNomes(ids) {
+    if (!this.user) return;
+    const faltam = [...new Set(ids.filter((x) => x && !this.nomes.has(x)))];
+    if (!faltam.length) return;
+    faltam.forEach((x) => this.nomes.set(x, ''));
+    this.user.profiles(faltam).then((ps) => {
+      for (const x of faltam) this.nomes.set(x, (ps[x] && ps[x].name) || '');
+      this.emitir({ nomes: true });
+    });
   }
 
   // ───────── leitura ─────────
@@ -132,7 +166,7 @@ export class Store {
     const u = this.usuario;
     if (!u) return false;
     if (c === 'config') return u.perfil === 'admin';
-    if (c === 'comentarios') return true;
+    if (c === 'comentarios') return !(this.modo === 'claude' && u.perfil === 'leitor');
     if (u.perfil === 'leitor') return false;
     return this.podeVer(c);
   }
@@ -144,11 +178,13 @@ export class Store {
   setConexao(estado, erro = '') {
     const mudou = this.conexao.estado !== estado || this.conexao.erro !== erro;
     this.conexao = { estado, erro, ultima: estado === 'online' || estado === 'demo' ? new Date().toISOString() : this.conexao.ultima };
+    if (estado === 'online' && !mudou) return;
     if (mudou) this.emitir({ conexao: true });
   }
 
   registrarEvento(ev) {
-    if (ev.s && this.eventos.some((e) => e.s === ev.s && e.u === ev.u && e.id === ev.id)) return;
+    const chave = (e) => e.k || (e.s ? `${e.s}|${e.u}|${e.id}` : '');
+    if (chave(ev) && this.eventos.some((e) => chave(e) === chave(ev))) return;
     const mod = MOD[ev.c];
     const reg = this.dados[ev.c] && this.dados[ev.c].get(ev.id);
     if (!ev.t && mod && reg) ev.t = mod.titulo(reg);
@@ -178,11 +214,17 @@ export class Store {
     }
     if (atual && !Object.keys(patch).length) return atual;
     const r = {
-      ...(atual || { id, criado_em: agora, criado_por: this.usuario.nome }),
-      ...patch, id, atualizado_em: agora, atualizado_por: this.usuario.nome,
+      ...(atual || { id, criado_em: agora, criado_por: this.autorAtual() }),
+      ...patch, id, atualizado_em: agora, atualizado_por: this.autorAtual(),
     };
     const acao = !atual ? 'criar' : patch.excluido ? 'excluir' : 'atualizar';
-    if (this.modo === 'demo') {
+    if (this.modo === 'claude') {
+      r._v = Date.now();
+      r._pend = true;
+      this.dados[c].set(id, r);
+      const corpo = atual ? { ...patch, atualizado_em: agora, atualizado_por: r.atualizado_por, _v: r._v } : { ...r };
+      this.gravarClaude(c, id, corpo, !atual, acao, Object.keys(patch));
+    } else if (this.modo === 'demo') {
       r._v = ++this.seq;
       this.dados[c].set(id, r);
       this.registrarEvento({ s: this.seq, q: agora, u: this.usuario.login, n: this.usuario.nome, c, id, a: acao, f: Object.keys(patch), t: MOD[c] ? MOD[c].titulo(r) : '' });
@@ -240,7 +282,7 @@ export class Store {
   chaveCache() { return this.modo === 'demo' ? 'estado:demo' : 'estado:servidor'; }
 
   async salvarCache() {
-    if (!this.modo) return;
+    if (!this.modo || this.modo === 'claude') return; // o armazenamento do artefato já guarda tudo
     const dados = {};
     for (const c of TODAS_COLECOES) dados[c] = Array.from(this.dados[c].values());
     await kv.set(this.chaveCache(), {
@@ -268,6 +310,7 @@ export class Store {
   /** Decide o modo e restaura o cache. Retorna 'pronto' | 'login' | 'boas-vindas'. */
   async iniciar() {
     if (this.modoEscolhido() === 'demo') return this.iniciarDemo();
+    if (EM_ARTEFATO) return (await this.iniciarClaude()) ? 'pronto' : 'boas-vindas';
     const url = this.urlConfigurada();
     if (!url) return 'boas-vindas';
     this.modo = 'servidor';
@@ -433,6 +476,7 @@ export class Store {
   async sair() {
     clearTimeout(this.timer);
     if (this.pararSimulador) { this.pararSimulador(); this.pararSimulador = null; }
+    if (this.modo === 'claude') { (this.desassinar || []).forEach((f) => { try { f(); } catch { /* */ } }); }
     if (this.modo === 'servidor') {
       try { if (this.token) await this.chamar('sair', {}, 5000); } catch { /* sem rede: o token expira sozinho */ }
       this.token = '';
@@ -443,6 +487,158 @@ export class Store {
   }
 
   esquecerServidor() { pref.set('url', ''); }
+
+  /** Liga/desliga o modo demonstração e recarrega (usado dentro do Claude). */
+  escolherModo(modo) { pref.set('modo', modo); }
+
+  // ───────── modo claude (artefato) ─────────
+  async iniciarClaude() {
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    if (!db || !user) return false;
+    const me = await user.me();
+    if (!me.id) return false; // sem identidade (fora da conta): não há dados compartilhados
+    const [dono, admin, escrita] = await Promise.all([user.isOwner(), user.canEdit(), user.can('data.write')]);
+    this.db = db;
+    this.user = user;
+    this.modo = 'claude';
+    this.usuario = {
+      login: me.id,
+      nome: me.name || 'Você',
+      perfil: dono || admin ? 'admin' : escrita === false ? 'leitor' : 'editor',
+      modulos: '*',
+      setor: '',
+    };
+    this.setConexao('conectando');
+    this.assinarClaude();
+    this.iniciarPresenca();
+    window.addEventListener('offline', () => this.setConexao('offline'));
+    window.addEventListener('online', () => this.setConexao('online'));
+    return true;
+  }
+
+  assinarClaude() {
+    const pendentes = new Set(TODAS_COLECOES);
+    const carregadas = new Set();
+    this.desassinar = [];
+    this.timerCarga = setTimeout(() => {
+      if (!this.carregado) this.setConexao('erro', 'Os dados ainda não responderam. Confira a conexão; a página continua tentando.');
+    }, 10000);
+    const erro = (e) => {
+      if (e && e.code === 'revoked') { this.setConexao('erro', 'O acesso a este aplicativo foi alterado.'); return; }
+      this.setConexao('erro', (e && e.message) || 'Falha ao receber dados.');
+    };
+    for (const c of TODAS_COLECOES) {
+      this.desassinar.push(this.db.collection(c).onSnapshot((snap) => {
+        const eventos = [];
+        const ids = [];
+        for (const ch of snap.docChanges()) {
+          const d = ch.doc;
+          if (ch.type === 'removed') { this.dados[c].delete(d.id); continue; }
+          const r = { ...d.data(), id: d.id };
+          const antes = this.dados[c].get(d.id);
+          this.dados[c].set(d.id, r);
+          ids.push(r.atualizado_por, r.criado_por, r.autor);
+          const deOutro = carregadas.has(c) && !d.metadata.hasPendingWrites && r.atualizado_por !== this.usuario.login;
+          if (deOutro && (!antes || antes._v !== r._v)) {
+            this.recentes.set(d.id, Date.now());
+            if (c === 'avisos' && ch.type === 'added') eventos.push({ c, id: d.id, a: 'criar', u: r.criado_por });
+          }
+        }
+        if (!snap.metadata.fromCache) { pendentes.delete(c); carregadas.add(c); }
+        if (!pendentes.size && !this.carregado) {
+          this.carregado = true;
+          clearTimeout(this.timerCarga);
+          this.setConexao(navigator.onLine === false ? 'offline' : 'online');
+        }
+        this.resolverNomes(ids);
+        this.emitir({ colecoes: new Set([c]), remoto: true, eventos, recarga: !carregadas.has(c) });
+      }, erro));
+    }
+    // feed de atividade: as alterações mais recentes de todos
+    this.desassinar.push(this.db.collection('eventos').orderBy('q', 'desc').limit(MAX_EVENTOS).onSnapshot((snap) => {
+      const ids = [];
+      for (const ch of snap.docChanges()) {
+        if (ch.type !== 'added') continue;
+        const e = ch.doc.data();
+        this.registrarEvento({ k: ch.doc.id, q: e.q, u: e.u, c: e.c, id: e.id, a: e.a, f: e.f || [], t: e.t });
+        ids.push(e.u);
+      }
+      this.resolverNomes(ids);
+      this.emitir({ colecoes: new Set(['_eventos']) });
+    }, erro));
+  }
+
+  async iniciarPresenca() {
+    const room = await window.claude.use('room');
+    if (!room) return;
+    try {
+      room.presence({ ativo: true }).catch(() => { /* presença é opcional */ });
+      this.desassinar.push(room.onPeers(({ peers }) => {
+        const vistos = new Map();
+        const t = new Date().toISOString();
+        for (const p of peers) if (p.kind === 'viewer' && p.by && !p.isMe) vistos.set(p.by, { login: p.by, t });
+        this.online = [...vistos.values()];
+        this.resolverNomes(this.online.map((o) => o.login));
+        this.emitir({ presenca: true });
+      }, () => { /* sala indisponível: o app funciona sem presença */ }));
+    } catch { /* idem */ }
+  }
+
+  /** Grava no armazenamento do artefato, um documento de cada vez, e registra o evento. */
+  gravarClaude(c, id, corpo, criar, acao, campos) {
+    const caminho = `${c}/${id}`;
+    const limpo = {};
+    for (const [k, v] of Object.entries(corpo)) if (v !== undefined && k !== '_pend') limpo[k] = v;
+    const anterior = this.cadeias.get(caminho) || Promise.resolve();
+    const atual = anterior.catch(() => {}).then(async () => {
+      const ref = this.db.doc(caminho);
+      if (criar) await ref.set(limpo); else await ref.update(limpo);
+    }).then(() => {
+      const r = this.dados[c].get(id);
+      if (r && r._pend) { const { _pend, ...resto } = r; this.dados[c].set(id, resto); }
+      this.registrarEventoClaude(c, id, acao, campos);
+      this.emitir({ colecoes: new Set([c]), local: true });
+    }).catch(async (e) => {
+      try {
+        const s2 = await this.db.doc(caminho).get();
+        if (s2.exists) this.dados[c].set(id, { ...s2.data(), id }); else this.dados[c].delete(id);
+      } catch { /* mantém o que há */ }
+      const msg = e && e.code === 'quota_exceeded'
+        ? 'O armazenamento deste aplicativo chegou ao limite. Exclua registros antigos ou migre para o servidor da Secretaria.'
+        : e && e.code === 'invalid_argument' ? 'Seu nível de acesso não permite esta alteração.' : 'Não foi possível gravar. Tente de novo.';
+      this.emitir({ colecoes: new Set([c]), aviso: `${MOD[c] ? MOD[c].nome : c}: ${msg}` });
+    });
+    this.cadeias.set(caminho, atual);
+    atual.finally(() => { if (this.cadeias.get(caminho) === atual) this.cadeias.delete(caminho); });
+  }
+
+  registrarEventoClaude(c, id, a, f) {
+    const r = this.dados[c].get(id);
+    const ev = { q: new Date().toISOString(), u: this.usuario.login, c, id, a, f, t: MOD[c] && r ? String(MOD[c].titulo(r)).slice(0, 200) : '' };
+    this.db.collection('eventos').doc(novoId('ev')).set(ev).catch(() => { /* o registro já foi gravado */ });
+    if (Math.random() < 0.05) this.podarEventos();
+  }
+
+  /** Apaga eventos mais antigos que a retenção (o artefato tem limite de documentos). */
+  async podarEventos() {
+    try {
+      const limite = new Date(Date.now() - RETENCAO_EVENTOS_DIAS * 86400000).toISOString();
+      const velhos = await this.db.collection('eventos').where('q', '<', limite).limit(100).get();
+      for (const d of velhos.docs) await this.db.doc(`eventos/${d.id}`).delete();
+    } catch { /* tenta de novo numa próxima gravação */ }
+  }
+
+  /** Histórico completo de um registro (servidor ou armazenamento do artefato). */
+  async historico(c, id) {
+    if (this.modo === 'servidor') return (await this.chamar('historico', { c, id })).eventos || [];
+    if (this.modo === 'claude') {
+      const snap = await this.db.collection('eventos').where('c', '==', c).where('id', '==', id).limit(500).get();
+      const evs = snap.docs.map((d) => d.data()).sort((a, b) => String(b.q).localeCompare(String(a.q)));
+      this.resolverNomes(evs.map((e) => e.u));
+      return evs;
+    }
+    return null;
+  }
 }
 
 function igual(a, b) {

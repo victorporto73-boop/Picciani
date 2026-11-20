@@ -2,7 +2,16 @@
 
 Painel de controle da Secretaria Municipal de Saúde de Rio das Ostras.
 
-**Endereço:** `https://victorporto73-boop.github.io/Picciani/saude/`
+Há duas formas de abrir:
+
+- **Dentro do Claude** (recomendada para o Gabinete): pelo link do aplicativo no Claude, ou
+  pelo atalho fixado na barra lateral. Entra direto com a sua conta Claude, sem senha à parte.
+  Quem tem acesso é definido no botão **Compartilhar** do aplicativo (veja a seção 4).
+- **Pelo navegador:** `https://victorporto73-boop.github.io/Picciani/saude/`, com usuário e
+  senha do servidor da Secretaria (Apps Script + Planilha).
+
+As duas versões têm as mesmas telas, mas **guardam os dados em lugares diferentes**: o que
+se cadastra numa não aparece na outra. Escolha uma para o uso oficial da equipe.
 
 ---
 
@@ -34,6 +43,16 @@ Troque a senha no primeiro acesso: **Configurações → Minha senha** (mínimo 
 O aplicativo ganha ícone próprio e abre mesmo sem sinal, com os últimos dados salvos.
 
 ## 4. Perfis de acesso
+
+**Dentro do Claude**, o perfil vem do nível de acesso no botão **Compartilhar**:
+
+| Nível no Claude | Perfil no sistema |
+|---|---|
+| Proprietário ou Editor | Administrador |
+| Colaborador (Contributor) | Editor de todos os módulos |
+| Comentarista ou Leitor | Consulta |
+
+**Na versão com servidor**, o administrador cria cada usuário com perfil e módulos:
 
 | Perfil | Para quem | Pode |
 |---|---|---|
