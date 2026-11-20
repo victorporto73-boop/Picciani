@@ -46,6 +46,8 @@ fictícios e uma equipe simulada alterando registros a cada poucos segundos).
 
 **Instalar de verdade:** siga `apps-script/saude/LEIA-ME.md`.
 
+**Guia de uso para a equipe:** `docs/saude/GUIA.md`.
+
 ---
 
 # Cadastro Reunião — app + planilha
