@@ -1,3 +1,53 @@
+Este repositório tem dois sistemas:
+
+- **Gestão Integrada da Saúde** — painel do Secretário Municipal de Saúde de Rio das Ostras
+  (`docs/saude/` + `apps-script/saude/`). Veja a seção abaixo.
+- **Cadastro Reunião** — app de presença em reunião (`docs/` + `apps-script/`). Veja mais abaixo.
+
+# Gestão Integrada da Saúde
+
+Painel único para o Secretário e as coordenações acompanharem a Secretaria inteira,
+com atualização em tempo real entre todos os usuários conectados.
+
+    docs/saude/              aplicativo (PWA) — publicado pelo GitHub Pages em /saude/
+      js/modulos.js          os 16 módulos: campos, alertas, indicadores (edite aqui)
+      js/store.js            cache local, fila offline e sincronização
+      js/app.js              telas: painel, módulos, agenda, gaveta de registro, usuários
+      js/demo.js             dados fictícios e equipe simulada do modo demonstração
+      js/config.js           URL do servidor e intervalos de sincronização
+    apps-script/saude/       servidor (Google Apps Script + Planilha) e guia de instalação
+
+**Módulos**
+
+| Grupo | Módulos |
+|---|---|
+| Gabinete | Painel do Secretário · Agenda integrada (compromissos + prazos de todos os módulos + obrigações da LC 141/2012) · Demandas e tarefas (quadro kanban) · Mural de avisos |
+| Rede e Assistência | Rede de unidades (com visão integrada por unidade) · Ocorrências · Regulação e filas · Farmácia e insumos · Escalas e plantões |
+| Vigilância em Saúde | Agravos por semana epidemiológica · Imunização e campanhas |
+| Controle | Judicialização e órgãos de controle · Ouvidoria do SUS · Protocolo e documentos |
+| Gestão e Finanças | Contratos e compras · Orçamento e Fundo de Saúde · Planejamento e metas |
+
+**Integração e tempo real**
+
+- Alertas automáticos (prazo de mandado, ouvidoria fora do prazo legal, ruptura e validade de
+  estoque, leitos lotados, plantão descoberto, contrato vencendo...) no painel, no menu e no sino.
+- Cada registro mostra o que se liga a ele nos outros módulos. Por exemplo: uma unidade
+  reúne suas ocorrências, manifestações da ouvidoria, escalas, filas e contratos. Qualquer
+  registro gera uma demanda vinculada com um clique.
+- Alterações de qualquer usuário chegam às outras telas em segundos, com destaque visual,
+  feed de atividade, presença de quem está conectado e comentários por registro.
+- Funciona sem internet: a tela abre do cache e as gravações entram numa fila enviada
+  automaticamente quando a conexão volta.
+- Perfis (admin, gestor, editor, leitor) e módulos autorizados verificados no servidor;
+  trilha de auditoria completa na aba `_Eventos`.
+
+**Experimentar agora:** abra `/saude/` e escolha *Explorar em modo demonstração* (dados
+fictícios e uma equipe simulada alterando registros a cada poucos segundos).
+
+**Instalar de verdade:** siga `apps-script/saude/LEIA-ME.md`.
+
+---
+
 # Cadastro Reunião — app + planilha
 
 App de cadastro de presença para reunião política. Funciona offline no celular e grava
