@@ -1,0 +1,13 @@
+{
+  "name": "Gestão Integrada da Saúde — Rio das Ostras",
+  "short_name": "Gestão Saúde",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c2236",
+  "theme_color": "#0c2236",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
